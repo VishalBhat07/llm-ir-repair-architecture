@@ -1,0 +1,3 @@
+Category,Error Message,Root Cause
+Metadata Invariant,expected metadata operand,LLM generated malformed DWARF debug metadata that doesn't align with LLVM 22 strictures.
+Syntax Invariant,error: expected value token,LLM incorrectly repeated the type specification for the second operand in an icmp instruction.
