@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "defaults": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "max_output_tokens": 2048,
+    "timeout_seconds": 120,
+    "repair_max_attempts": 3
+  },
+  "models": [
+    {
+      "name": "qwen25_coder_small_local",
+      "provider": "ollama",
+      "model": "qwen2.5-coder:3b",
+      "access_mode": "local_ollama",
+      "base_url": "http://172.17.48.1:11434",
+      "timeout_seconds": 600,
+      "context_window": 32768,
+      "pricing": {
+        "input_per_million_usd": 0.0,
+        "output_per_million_usd": 0.0
+      },
+      "notes": "Local default mapped to Qwen2.5-Coder 3B for rate-limit-free runs."
+    },
+    {
+      "name": "gemini_api",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "access_mode": "api_gemini",
+      "context_window": 1048576,
+      "env_api_key": "GEMINI_API_KEY",
+      "pricing": {
+        "input_per_million_usd": null,
+        "output_per_million_usd": null
+      },
+      "notes": "Fast hosted baseline with long context and low latency."
+    }
+  ]
+}

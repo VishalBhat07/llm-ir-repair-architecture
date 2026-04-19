@@ -1,22 +1,15 @@
-import subprocess
+from __future__ import annotations
 
-def check_ir_validity(ir_filepath):
-    """
-    Runs the LLVM 'opt' tool with the -verify flag.
-    Returns (True, None) if valid.
-    Returns (False, error_message) if invalid.
-    """
-    try:
-        # -S: Keep it human-readable
-        # -verify: The critical check for SSA and structural integrity
-        # Use the '-passes' flag which is required by the New Pass Manager in LLVM 22+
-        # We use '-disable-output' because we only care about the validation result, not printing the IR.
-        cmd = ["opt", "-passes=verify", "-disable-output", ir_filepath]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            return True, "Success"
-        else:
-            return False, result.stderr
-    except FileNotFoundError:
-        return False, "LLVM 'opt' not found in PATH."
+from pathlib import Path
+
+from llm_ir_pipeline.validator import LLVMIRValidator
+
+
+def check_ir_validity(ir_filepath: str) -> tuple[bool, str]:
+    validator = LLVMIRValidator()
+    ir_text = Path(ir_filepath).read_text(encoding="utf-8")
+    result = validator.validate(ir_text, case=None)
+    if result.parse_ok and result.verify_ok:
+        return True, "Success"
+    messages = [f"{issue.category}: {issue.message}" for issue in result.issues]
+    return False, "\n".join(messages)

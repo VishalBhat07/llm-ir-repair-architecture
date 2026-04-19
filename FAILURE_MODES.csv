@@ -1,3 +1,11 @@
-Category,Error Message,Root Cause
-Metadata Invariant,expected metadata operand,LLM generated malformed DWARF debug metadata that doesn't align with LLVM 22 strictures.
-Syntax Invariant,error: expected value token,LLM incorrectly repeated the type specification for the second operand in an icmp instruction.
+Category,Detection Layer,Description,Typical Root Cause
+duplicate_ssa_name,Custom structural checks,The same SSA value name is defined more than once in a function,LLM reuses a virtual register name after reassignment in the source program
+undefined_value,Custom structural checks or verifier,An SSA value is used before it is defined or dominates the use,LLM loses data-flow order across blocks or emits incomplete predecessors
+bad_phi,Custom structural checks or verifier,`phi` node has malformed incoming pairs or mismatched predecessors,LLM imitates `phi` syntax without matching CFG structure
+bad_label,Custom structural checks or verifier,Branch target label does not exist or no longer matches the block graph,LLM renames labels inconsistently during generation or repair
+missing_terminator,Custom structural checks or verifier,Basic block lacks a required terminator such as `br` or `ret`,LLM emits a plausible block body but forgets to close the block
+signature_mismatch,Custom structural checks,Call-site arguments do not match declared callee signature,LLM invents helper calls or drops parameters during repair
+type_width_mismatch,Custom structural checks or verifier,Instruction operands do not match expected LLVM IR types,LLM confuses `i1` predicate results with `i32` arithmetic values
+tool_diagnostic,llvm-as or opt,LLVM reported an error that does not yet map cleanly to a custom category,Used as a catch-all bucket for future taxonomy expansion
+semantic_mismatch,Semantic execution,IR passes syntax and verifier checks but returns the wrong observable result,LLM preserves surface structure while changing program meaning
+tool_unavailable,Environment checks,Required LLVM executable is missing from the environment,Local machine is not yet provisioned with the LLVM toolchain
