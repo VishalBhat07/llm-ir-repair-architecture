@@ -1,82 +1,190 @@
-# llm-ir-repair-architecture
+# LLM IR Repair Architecture
 
-**Investigating neural compiler lowering, structural failure modes, and automated validation loops.**
+Research framework for studying whether LLMs can lower a constrained high-level language subset into **valid LLVM IR**, where they fail, and how much a validator-and-repair loop helps.
 
----
+## What This Repository Now Covers
 
-## 01. Overview
-This project evaluates the efficacy of Large Language Models (LLMs) in translating high-level source language constructs into structured **LLVM Intermediate Representation (IR)**. Unlike standard code generation, compiler IR requires strict adherence to **Static Single Assignment (SSA)** rules, type invariants, and control-flow integrity. 
+- A fixed LLVM-focused lowering study rather than a single hardcoded demo
+- A benchmark corpus with **18 cases**
+  - `10` curated core programs
+  - `8` mutated variants
+- A multi-backend model interface for:
+  - local `Ollama`
+  - hosted `Gemini`
+- A staged validator pipeline:
+  - output sanitization
+  - `llvm-as` parse gate
+  - `opt -passes=verify`
+  - custom structural failure labeling
+  - semantic execution with `lli`
+- A bounded repair loop that feeds diagnostics back into the model
+- Batch experiment running plus CSV/JSON/Markdown reporting
 
-The core of this architecture is a **validator-in-the-loop** system that uses formal compiler tools to audit neural outputs and trigger automated repairs.
-
-
-
----
-
-## 02. Objectives
-The research aims to determine if an LLM can:
-* **Map** basic high-level constructs (arithmetic, conditionals, loops) to valid IR.
-* **Preserve** complex data-flow and control-flow structures without semantic drift.
-* **Recover** from generation errors using feedback from the LLVM `opt` verifier.
-* **Categorize** failure modes specific to neural lowering (e.g., dominance violations).
-
----
-
-## 03. Project Architecture
-
-### The Pipeline
-1.  **Ingestion:** A subset of C-language constructs is provided as input.
-2.  **Neural Lowering:** The LLM acts as the compiler frontend, generating LLVM IR.
-3.  **Auditing:** The IR is passed through `opt -S -verify` (LLVM 22.1.3).
-4.  **Repair Loop:** Error logs (stderr) are fed back to the LLM for iterative correction until the IR is semantically valid.
-
----
-
-## 04. Repository Structure
+## Repository Layout
 
 ```text
 llm-ir-repair-architecture/
-├── benchmarks/         # Source C snippets (the "Input")
-├── ground_truth/       # Clang-generated reference IR (the "Gold Standard")
+├── benchmarks/
+│   ├── core/                 # Curated source programs
+│   ├── mutated/              # Systematic program variants
+│   ├── invalid_ir/           # Seeded invalid LLVM IR fixtures
+│   └── metadata/             # Benchmark manifests with tags and tests
+├── configs/
+│   └── models.yaml           # JSON-compatible YAML model suite config
+├── docs/
+│   ├── lowering_matrix.md
+│   ├── environment.md
+│   └── future_fine_tuning.md
+├── ground_truth/             # Clang-generated reference IR
+├── results/                  # Experiment outputs
 ├── src/
-│   ├── driver.py       # Automation harness & Repair Loop logic
-│   ├── llm_client.py   # LLM API integration (Gemini / Ollama)
-│   └── validator.py    # Subprocess wrapper for LLVM 'opt'
-├── results/            # Logs of raw LLM output vs. verified IR
-└── FAILURE_MODES.md    # Catalog of identified neural compiler errors
+│   ├── driver.py             # CLI entrypoint
+│   ├── validator.py          # Backward-compatible wrapper
+│   └── llm_ir_pipeline/      # Core package
+└── tests/
 ```
 
----
+## Benchmark Design
 
-## 05. Technical Stack
+The source subset intentionally focuses on the places LLMs commonly fail when generating compiler IR:
 
-| Component | Specification |
-| :--- | :--- |
-| **Host Hardware** | MacBook Air M2 (8GB RAM) |
-| **Compiler Suite** | LLVM 22.1.3 |
-| **Automation** | Python 3.11+ |
-| **LLM Engine** | Gemini 1.5 Flash / Gemini 3.1 Pro |
+- integer arithmetic
+- comparisons
+- assignments and reassignment pressure
+- `if` / `if-else` / nested branches
+- `for` and `while` loops
+- loop-carried values
+- helper function calls
+- early returns
+- branch-merge patterns that usually require `phi` nodes after lowering
 
----
+Out of scope in v1:
 
-## 06. Failure Taxonomy
-This project tracks and categorizes specific neural failures including:
+- pointers
+- structs
+- heap memory
+- floating point
+- recursion
+- undefined-behavior-heavy C patterns
 
-* **SSA Violations:** Re-assignment of virtual registers.
-* **Dominance Errors:** Use-before-definition in the Control-Flow Graph (CFG).
-* **Type Invariants:** Operations on incompatible bit-widths without casting.
-* **Terminator Errors:** Basic blocks lacking proper `br` or `ret` instructions.
+## Model Matrix
 
----
+The default model suite in `configs/models.yaml` includes:
 
-## 07. Usage
-1.  **Install LLVM:** `brew install llvm`
-2.  **Clone Repo:** `git clone https://github.com/VishalBhat07/llm-ir-repair-architecture.git`
-3.  **Run Pipeline:** `python src/driver.py`
+- `qwen25_coder_small_local`
+- `gemini_api`
 
----
+You can add or remove models without changing the rest of the pipeline.
+`qwen25_coder_small_local` is configured for Ollama `qwen2.5-coder:3b`.
 
-## 08. Acknowledgments
-Developed for **CS363IA: Compiler Design** (Semester VI) at **RV College of Engineering**. This project explores the boundary between deterministic compiler engineering and probabilistic neural generation.
+## Validation and Repair Flow
 
----
+1. Prompt a model to lower a benchmark source program into LLVM IR.
+2. Sanitize the raw output to remove markdown and conversational text.
+3. Parse with `llvm-as`.
+4. Verify structural correctness with `opt -passes=verify`.
+5. Run custom checks to classify failure modes such as:
+   - duplicate SSA names
+   - undefined values
+   - malformed `phi`
+   - bad labels
+   - missing terminators
+   - signature mismatches
+   - type-width mismatches
+6. If available, execute the IR with `lli` on public and hidden test vectors.
+7. If validation fails, feed precise diagnostics into a repair prompt and retry.
+
+## CLI Usage
+
+Run commands from the repository root.
+
+### Check the environment
+
+```bash
+python src/driver.py smoke-test
+```
+
+### Inspect the benchmark inventory
+
+```bash
+python src/driver.py inventory
+```
+
+### Generate reference LLVM IR with Clang
+
+```bash
+python src/driver.py prepare-ground-truth
+```
+
+Limit to a split:
+
+```bash
+python src/driver.py prepare-ground-truth --splits core,mutated
+```
+
+### Run experiments
+
+```bash
+python src/driver.py run --models qwen25_coder_small_local --splits core --prompt zero_shot --repair-attempts 1
+```
+
+If you omit `--models`, the CLI defaults to running all models defined in the yaml file.
+
+By default, `--repair-attempts 1` runs the zero-shot generation with no repair. If you want the system to pipe compiler diagnostics back into the LLM if it fails and give it multiple chances to fix its mistakes, set `--repair-attempts 3`.
+
+Few-shot condition:
+
+```bash
+python src/driver.py run --models gemini_api --splits core --prompt few_shot --limit 10
+```
+
+Artifacts are written into timestamped subdirectories under `results/`.
+
+## Environment Setup
+
+Because this pipeline compiles the generated `.ll` files directly into `.exe` or `.out` binaries to perform rigorous semantic validation, you must have full LLVM and C++ linking tools on your `PATH`.
+
+- Python 3.11+
+- `clang`
+
+You can verify your toolchain by running `python src/driver.py smoke-test`. The script gracefully falls back to `clang` to perform all parsing and semantic evaluations if native `llvm-as` and `lli` are missing.
+
+### 🐛 Windows MSVC Linker Troubleshooting
+If you attempt to run on Windows in a standard PowerShell, `clang` will fail to compile the executables with the error: `lld-link: error: could not open 'libcmt.lib'`.
+**The Fix:** You must run the `src/driver.py` command from inside the **"x64 Native Tools Command Prompt for VS"** (search for this in the Windows Start Menu). This automatically injects the Microsoft C++ Linker tools into the terminal's environment, allowing `clang` to execute properly.
+
+Alternatively, use the intended research environment: **WSL2 Ubuntu**.
+
+## Report and Paper Guidance
+
+The pipeline is designed to support the assignment deliverables directly:
+
+- a defined source-language subset
+- a target-IR mapping and lowering matrix
+- generated IR examples plus correctness analysis
+- failure-mode categorization
+- validator / repair architecture
+- comparative evaluation across Ollama and Gemini models
+
+Recommended headline metrics:
+
+- parse pass rate
+- verifier pass rate
+- semantic pass rate
+- repair uplift
+- attempts to success
+- latency
+- token usage
+- estimated cost
+
+Recommended ablations:
+
+- zero-shot vs few-shot
+- raw generation vs repair loop
+- sanitizer on vs off
+- validator feedback on vs off
+
+## Official References For Model Access
+
+- Gemini API quickstart: https://ai.google.dev/gemini-api/docs/quickstart
+- Ollama docs: https://docs.ollama.com/
