@@ -138,7 +138,7 @@ def main() -> None:
                     "run_count": total,
                     "succeeded": succeeded,
                     "repair_attempts_cap": args.repair_attempts,
-                    "artifacts": {name: str(path) for name, path in artifacts.items()},
+                    "artifacts": {name: [str(p) for p in paths] for name, paths in artifacts.items()},
                 },
                 indent=2,
             )

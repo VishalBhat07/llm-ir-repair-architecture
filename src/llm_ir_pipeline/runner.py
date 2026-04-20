@@ -68,7 +68,7 @@ class ExperimentRunner:
         limit: int | None = None,
         no_llm: bool = False,
         repair_attempts: int | None = None,
-    ) -> tuple[list[RunRecord], dict[str, Path]]:
+    ) -> tuple[list[RunRecord], dict[str, list[Path]]]:
         """Run the experiment.
 
         Parameters
@@ -190,8 +190,7 @@ class ExperimentRunner:
                 )
 
         timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        output_dir = self.repo_root / "results" / timestamp
-        artifacts = write_run_artifacts(runs, output_dir)
+        artifacts = write_run_artifacts(runs, timestamp, self.repo_root)
         return runs, artifacts
 
     def benchmark_inventory(self) -> list[dict[str, object]]:

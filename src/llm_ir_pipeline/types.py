@@ -45,7 +45,7 @@ class ModelConfig:
     repair_max_attempts: int = 3
     request_max_retries: int = 3
     request_backoff_seconds: float = 2.0
-    preflight_timeout_seconds: int = 10
+    preflight_timeout_seconds: int = 60
 
 
 @dataclass

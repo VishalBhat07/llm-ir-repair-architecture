@@ -32,19 +32,28 @@ class LLVMToolchain:
         return getattr(self.status, tool_name)
 
     def run(self, command: list[str], cwd: Path | None = None) -> CommandResult:
-        completed = subprocess.run(
-            command,
-            cwd=str(cwd) if cwd else None,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-        return CommandResult(
-            command=command,
-            returncode=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-        )
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=str(cwd) if cwd else None,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=10,
+            )
+            return CommandResult(
+                command=command,
+                returncode=completed.returncode,
+                stdout=completed.stdout,
+                stderr=completed.stderr,
+            )
+        except subprocess.TimeoutExpired as e:
+            return CommandResult(
+                command=command,
+                returncode=-1,
+                stdout=e.stdout.decode("utf-8") if isinstance(e.stdout, bytes) else (e.stdout or ""),
+                stderr=f"Execution timed out after 10 seconds: {e}",
+            )
 
     def run_tool(self, tool_name: str, args: list[str], cwd: Path | None = None) -> CommandResult:
         command = self.command_for(tool_name)

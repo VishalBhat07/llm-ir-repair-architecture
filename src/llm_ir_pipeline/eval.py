@@ -10,47 +10,84 @@ def _ratio(values: list[bool]) -> float:
     return round(sum(1 for value in values if value) / len(values), 4) if values else 0.0
 
 
+def _average(values: list[float | int | None]) -> float:
+    valid = [v for v in values if v is not None]
+    return round(sum(valid) / len(valid), 4) if valid else 0.0
+
+
 def summarize_runs(run_records: list[RunRecord]) -> dict[str, object]:
-    overall = {
-        "total_runs": len(run_records),
-        "success_rate": _ratio([record.success for record in run_records]),
-        "parse_rate": _ratio([record.final_attempt().validation.parse_ok for record in run_records]),
-        "verify_rate": _ratio([record.final_attempt().validation.verify_ok for record in run_records]),
-        "semantic_rate": _ratio([record.final_attempt().validation.semantic_ok for record in run_records]),
-        "avg_attempts": round(mean([len(record.attempts) for record in run_records]), 3) if run_records else 0.0,
-    }
+    if not run_records:
+        return {}
 
-    by_model: dict[str, list[RunRecord]] = defaultdict(list)
-    by_split: dict[str, list[RunRecord]] = defaultdict(list)
-    by_prompt: dict[str, list[RunRecord]] = defaultdict(list)
-    by_tag: dict[str, list[RunRecord]] = defaultdict(list)
-    failure_categories: dict[str, int] = defaultdict(int)
+    # Core Rates
+    total_runs = len(run_records)
+    success_rate = _ratio([record.success for record in run_records])
+    parse_rate = _ratio([record.final_attempt().validation.parse_ok for record in run_records])
+    verify_rate = _ratio([record.final_attempt().validation.verify_ok for record in run_records])
+    semantic_rate = _ratio([record.final_attempt().validation.semantic_ok for record in run_records])
 
-    for record in run_records:
-        by_model[record.model_name].append(record)
-        by_split[record.split].append(record)
-        by_prompt[record.prompt_name].append(record)
-        for tag in record.tags:
-            by_tag[tag].append(record)
-        for category in record.final_issue_categories:
-            failure_categories[category] += 1
+    # Repair Phase Analysis
+    zero_shot_success = [r.attempts[0].validation.accepted for r in run_records if r.attempts]
+    zero_shot_rate = _ratio(zero_shot_success)
 
-    def bucket_summary(bucket: dict[str, list[RunRecord]]) -> dict[str, dict[str, float]]:
-        return {
-            key: {
-                "runs": len(records),
-                "success_rate": _ratio([record.success for record in records]),
-                "verify_rate": _ratio([record.final_attempt().validation.verify_ok for record in records]),
-                "semantic_rate": _ratio([record.final_attempt().validation.semantic_ok for record in records]),
-            }
-            for key, records in sorted(bucket.items())
-        }
+    needs_repair = [r for r in run_records if r.attempts and not r.attempts[0].validation.accepted]
+    repair_efficacy = _ratio([r.success for r in needs_repair]) if needs_repair else 0.0
+
+    successful_runs = [r for r in run_records if r.success]
+    avg_attempts_to_success = _average([len(r.attempts) for r in successful_runs])
+
+    # Token Metrics
+    all_input_tokens = []
+    all_output_tokens = []
+    for r in run_records:
+        for att in r.attempts:
+            all_input_tokens.append(att.input_tokens)
+            all_output_tokens.append(att.output_tokens)
+    
+    avg_input_tokens = _average(all_input_tokens)
+    avg_output_tokens = _average(all_output_tokens)
+
+    # Error Evolution (Attempt Decay)
+    max_attempts = max((len(r.attempts) for r in run_records), default=0)
+    error_evolution = []
+    for i in range(max_attempts):
+        attempts_at_i = [r.attempts[i] for r in run_records if len(r.attempts) > i]
+        if not attempts_at_i:
+            continue
+        error_evolution.append({
+            "attempt_index": i + 1,
+            "sample_size": len(attempts_at_i),
+            "parse_rate": _ratio([a.validation.parse_ok for a in attempts_at_i]),
+            "verify_rate": _ratio([a.validation.verify_ok for a in attempts_at_i]),
+            "semantic_rate": _ratio([a.validation.semantic_ok for a in attempts_at_i]),
+            "success_rate": _ratio([a.validation.accepted for a in attempts_at_i])
+        })
+
+    # Persistent Failures
+    failed_runs = [r for r in run_records if not r.success]
+    persistent_failures: dict[str, int] = defaultdict(int)
+    for r in failed_runs:
+        for cat in r.final_issue_categories:
+            persistent_failures[cat] += 1
 
     return {
-        "overall": overall,
-        "by_model": bucket_summary(by_model),
-        "by_split": bucket_summary(by_split),
-        "by_prompt": bucket_summary(by_prompt),
-        "by_tag": bucket_summary(by_tag),
-        "failure_categories": dict(sorted(failure_categories.items())),
+        "overall": {
+            "total_runs": total_runs,
+            "success_rate": success_rate,
+            "parse_rate": parse_rate,
+            "verify_rate": verify_rate,
+            "semantic_rate": semantic_rate,
+        },
+        "repair_analysis": {
+            "zero_shot_rate": zero_shot_rate,
+            "repair_efficacy_rate": repair_efficacy,
+            "avg_attempts_to_success": avg_attempts_to_success,
+            "total_items_needing_repair": len(needs_repair)
+        },
+        "token_metrics": {
+            "avg_input_tokens_per_attempt": avg_input_tokens,
+            "avg_output_tokens_per_attempt": avg_output_tokens
+        },
+        "error_evolution": error_evolution,
+        "persistent_failures": dict(sorted(persistent_failures.items(), key=lambda item: item[1], reverse=True))
     }
